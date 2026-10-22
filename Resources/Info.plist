@@ -7,12 +7,12 @@
     <key>CFBundleIdentifier</key><string>de.sk2andy.PalmGuard</string>
     <key>CFBundleExecutable</key><string>PalmGuard</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSInputMonitoringUsageDescription</key>
-    <string>PalmGuard erkennt Trackpad-Kontakte und filtert unbeabsichtigte Klicks. Tastatureingaben werden nicht erfasst.</string>
+    <string>PalmGuard erkennt Trackpad-Taps und beobachtet Mausgesten, damit Druck-Klicks und native Drags erhalten bleiben. Tastatureingaben werden nicht erfasst.</string>
 </dict>
 </plist>

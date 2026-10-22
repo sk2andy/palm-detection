@@ -1,10 +1,10 @@
 # PalmGuard
 
 Native macOS-App für ein externes Apple Magic Trackpad unter einer Tastatur: eine frei
-einstellbare Tap-Fläche, Live-Kontakte und ein Filter gegen versehentliche Klicks durch
+einstellbare Tap-Fläche, Live-Kontakte und Schutz gegen versehentliche Taps durch
 aufliegende Handgelenke.
 
-**Status: experimentelle erste Version.** Rohkontakte und Gerätezuordnung verwenden private
+**Status: experimentelle Version.** Rohkontakte verwenden private
 macOS-Schnittstellen. Die App zeigt ihre tatsächliche Wirkung über Diagnosezähler an;
 eine perfekte Unterscheidung zwischen Absicht und Handballen ist nicht möglich.
 
@@ -51,31 +51,17 @@ und den Schutz aktivieren. Andere Apps und Berechtigungen müssen nicht zurückg
    verwenden. Oben entspricht der Tastaturseite, unten der dir zugewandten Seite.
 3. Handgelenke auflegen. Orange markiert Kontakte außerhalb der Fläche oder über der
    eingestellten Kontaktgröße. Grün markiert geometrisch zulässige Kontakte.
-4. Modus auswählen und **Schutz aktivieren**. Beim Start bleibt die App zunächst in Vorschau.
-5. Diagnose prüfen: Ein echter Trackpad-Klick sollte „Quellen zugeordnet“ erhöhen.
-   Bleibt dieser Zähler bei null, greift der Klickfilter auf diesem System nicht.
+4. **Natives „Tippen zum Klicken“ in den macOS-Trackpad-Einstellungen ausschalten.**
+   PalmGuard liest die Einstellung aus dem aktiven Treiber des ausgewählten Trackpads.
+   Nur falls das nicht möglich ist, muss die ausgeschaltete Einstellung manuell bestätigt werden.
+5. **Schutz aktivieren**. Beim Start bleibt die App zunächst in Vorschau. Unter „Erzeugte
+   Tap-Klicks“ siehst du die tatsächlich von PalmGuard erzeugten Klicks.
 
-### Vorhandene Klicks filtern
+### Nur Taps innerhalb der Fläche
 
-Standardmodus. Nur Links- und Rechtsklicks, deren Herkunft eindeutig dem ausgewählten
-externen Trackpad zugeordnet werden kann, werden anhand frischer Kontaktinformationen
-geprüft. Blockierte Mouse-down-Ereignisse erhalten auch kein Mouse-up/Drag-Gegenstück.
-Unbekannte Quellen und fehlende oder veraltete Kontaktdaten passieren unverändert.
-
-Das betrifft gegebenenfalls auch Druck-Klicks: macOS bietet keine dokumentierte zuverlässige
-Unterscheidung zwischen Tap und Druck-Klick. Solange ein zulässiger Finger noch aufliegt,
-bleiben Bewegung und langes Halten erlaubt, damit normales Drücken/Ziehen funktioniert.
-Erst nach dem Abheben gilt der vollständige Tap-Zeit-/Bewegungsbefund. Ein früh ausgelöster
-Tap-Klick kann deshalb passieren. Die App verzögert keine System-Klicks.
-
-Ein gültiger Tap hält die Freigabe nach dem Abheben für 150 ms offen, auch wenn das Handgelenk
-liegen bleibt. In diesem kurzen Fenster ist die Zuordnung eines weiteren Klicks mehrdeutig.
-
-### Eigene Taps erzeugen
-
-Für eine vollständig kontrollierte Tap-Erkennung: **natives „Tippen zum Klicken“ in den
-macOS-Trackpad-Einstellungen ausschalten** und in PalmGuard bestätigen. Andere Tools dürfen
-für dieses Trackpad ebenfalls keine zusätzlichen Tap-Klicks erzeugen.
+PalmGuard erzeugt eigene Ein- und Zweifinger-Taps. Andere Tools dürfen für dieses Trackpad
+keine zusätzlichen Tap-Klicks erzeugen. Native Mausereignisse werden ausschließlich mit
+`listenOnly` beobachtet: PalmGuard kann Druck-Klicks oder Drags weder blockieren noch verändern.
 
 PalmGuard erzeugt bei kurzen, stationären Kontakten in der erlaubten Fläche:
 
@@ -83,19 +69,33 @@ PalmGuard erzeugt bei kurzen, stationären Kontakten in der erlaubten Fläche:
 | --- | --- |
 | Ein Finger | Linksklick |
 | Zwei nahezu gleichzeitig aufgesetzte Finger | Rechtsklick |
-| Lange, wandernde oder mehr als zwei zulässige Kontakte | Kein erzeugter Klick |
+| Lange oder wandernde Kontakte | Kein erzeugter Klick |
+| Drei Finger, auch mit Fingern außerhalb der Fläche | Native Geste; kein erzeugter Tap-Klick |
+| Druck-/Force-Klick, auch außerhalb der Fläche | Unverändert durch macOS |
+| Drei-Finger-Drag, auch mit einem Finger außerhalb | Unverändert durch macOS |
 | Große oder außerhalb gestartete Kontakte | Bis zum Abheben ignoriert |
 | Handgelenk außerhalb plus neuer Finger innerhalb | Finger separat auswerten |
 
 Die Kontaktgröße ist ein relativer Sensorwert, kein verlässlicher Druck- oder Flächenwert.
 Schwellwerte lassen sich unter „Empfindlichkeit & Diagnose“ anpassen. Reale Druck-Klicks
 und Scrollen brechen einen Tap-Kandidaten ab, damit kein zusätzlicher Klick erzeugt wird.
-Tap-and-drag wird nicht nachgebildet; normales Drücken und Ziehen bleibt erhalten.
+Auch native Drag-Ereignisse und Maustasten-Releases brechen ausstehende Tap-Kandidaten ab.
+
+Drei-Finger-Ziehen muss in **Bedienungshilfen → Zeigersteuerung → Trackpad-Optionen** in
+macOS aktiviert sein. PalmGuard bildet diese Geste nicht selbst nach. Finger werden über
+die gesamte Rohkontaktfläche gezählt, bevor der erlaubte Tap-Bereich angewendet wird.
+Der Drei-Finger-Ausschluss bleibt bis zum Loslassen der beteiligten Kontakte bestehen.
+Große Handballen oberhalb der Kontaktgrößenschwelle zählen dabei nicht als Finger. Kleine
+Handballen können deshalb konservativ einen zusätzlichen Tap verhindern; Schwelle kalibrieren.
+
+Der frühere Modus „Vorhandene Klicks filtern“ wurde entfernt, da öffentliche Mausereignisse
+keine verlässliche Unterscheidung zwischen Tap und Druck-Klick bieten. Bestehende Flächen
+bleiben beim Update erhalten.
 
 ## Raycast / Hyperkey
 
 PalmGuard registriert keine Tastatur-Hooks, keine globalen Shortcuts und keine
-Tastenumbelegungen. Der Ereignisfilter enthält ausschließlich Maus-Klicks, Drag und Scrollen.
+Tastenumbelegungen. Die passive Beobachtung enthält ausschließlich Maus-Klicks, Drag und Scrollen.
 Erzeugte Klicks übernehmen den aktuellen Modifier-Zustand. Raycasts Hyperkey-Konfiguration
 wird weder gelesen noch verändert. Ein echter Test deiner konkreten Shortcuts bleibt Teil
 der Hardware-Abnahme.
@@ -103,15 +103,15 @@ der Hardware-Abnahme.
 ## Grenzen und Wiederherstellung
 
 - Es wird genau ein externes Trackpad ausgewählt; das eingebaute bleibt ausgeschlossen.
-- Private Schnittstellen können durch macOS-Updates ausfallen. Unbekannte Geräteereignisse
-  werden dann nicht blockiert. Diagnose und „Neu verbinden“ helfen bei der Prüfung.
+- Private Schnittstellen können durch macOS-Updates ausfallen. Eigene Taps stehen dann
+  gegebenenfalls nicht zur Verfügung. Native Klicks und Drags funktionieren weiterhin.
 - Bluetooth-Neuverbindung: „Neu verbinden“ drücken. Nach Ruhezustand wird neu verbunden;
   Schutz danach bewusst wieder aktivieren.
 - Zeigerbewegung, Scrollen und Systemgesten werden nicht unterdrückt. Die App verhindert
   nicht jede Cursorbewegung eines aufliegenden Handballens.
 - Die Erkennung verwendet Fläche, Kontaktgröße, Zeit und Bewegung. Ein Handballen mit
   fingerähnlichen Daten innerhalb der Fläche kann weiterhin als Finger erkannt werden.
-- Pausieren beendet die Filterwirkung. Bei „Eigene Taps“ natives Tap-to-click bei Bedarf in
+- Pausieren beendet die Erzeugung eigener Taps. Natives Tap-to-click bei Bedarf in
   macOS wieder einschalten; PalmGuard ändert diese Systemoption nicht selbst.
 - Beenden entfernt den Event-Tap. Einstellungen liegen lokal in UserDefaults unter
   `de.sk2andy.PalmGuard`. Es werden keine Tastaturinhalte oder Kontaktverläufe gespeichert.
@@ -121,11 +121,13 @@ der Hardware-Abnahme.
 ```mermaid
 flowchart LR
     A[Externes Trackpad] --> B[MultitouchBridge: Rohkontakte]
-    B --> C[Handgelenke und Finger trennen]
+    B --> H[Drei-Finger-Gesten über gesamte Fläche erkennen]
+    H --> C[Handgelenke und Finger trennen]
     C --> D[Fläche · Größe · Zeit · Bewegung]
     D --> E[Live-Vorschau]
-    D --> F[Klickfilter mit Gerätezuordnung]
-    D --> G[Optional: eigene Ein-/Zweifinger-Taps]
+    D --> G[Eigene Ein-/Zweifinger-Taps]
+    N[Native Klicks und Drags] --> O[Unverändert an macOS-Apps]
+    N -. passive Beobachtung .-> X[Ausstehende Tap-Kandidaten abbrechen]
 ```
 
 | Verzeichnis | Zweck |
@@ -143,7 +145,8 @@ bash scripts/build-app.sh
 ```
 
 Zusätzliche Hardware-Abnahme: Ein-/Zweifinger-Taps, ruhende Handgelenke, Doppelklick,
-Drücken/Ziehen, separate Maus, Scrollen, Bluetooth-Neuverbindung und eigene Raycast-Shortcuts.
+Drücken/Ziehen außerhalb der Fläche, Drei-Finger-Drags über die Flächengrenze, separate Maus,
+Scrollen, Bluetooth-Neuverbindung und eigene Raycast-Shortcuts.
 Automatisierte Tests ersetzen diese Abnahme nicht.
 
 ## API-Quellen
@@ -151,4 +154,4 @@ Automatisierte Tests ersetzen diese Abnahme nicht.
 - [Apple CGEvent](https://developer.apple.com/documentation/coregraphics/cgevent)
 - [Apple CGEventField](https://developer.apple.com/documentation/coregraphics/cgeventfield)
 - [Multitouch ABI-Referenz](https://github.com/calftrail/TrackMagic/blob/master/MultitouchSupport.h)
-- [LinearMouse: private Gerätezuordnung](https://github.com/linearmouse/linearmouse/blob/main/LinearMouse/LinearMouse-Bridging-Header.h)
+- [Apple: Drei-Finger-Ziehen](https://support.apple.com/de-de/102341)

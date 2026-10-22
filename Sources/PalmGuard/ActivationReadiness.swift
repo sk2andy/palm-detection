@@ -3,8 +3,8 @@ import Foundation
 enum ActivationProblem: String, Identifiable {
     case trackpadDisconnected
     case accessibilityRequired
-    case identityUnavailable
     case nativeTapsEnabled
+    case nativeTapStateUnknown
     case eventAccessRequired
 
     var id: String { rawValue }
@@ -13,9 +13,9 @@ enum ActivationProblem: String, Identifiable {
         switch self {
         case .trackpadDisconnected: "Externes Trackpad verbinden und neu verbinden."
         case .accessibilityRequired: "Bedienungshilfen für PalmGuard freigeben."
-        case .identityUnavailable: "Klickquelle auf diesem macOS nicht verfügbar. Eigene Taps verwenden."
-        case .nativeTapsEnabled: "Zuerst natives Tippen zum Klicken ausschalten und unten bestätigen."
-        case .eventAccessRequired: "Ereigniszugriff fehlt. Bedienungshilfen / Eingabeüberwachung prüfen."
+        case .nativeTapsEnabled: "Zuerst natives Tippen zum Klicken in macOS ausschalten."
+        case .nativeTapStateUnknown: "Trackpad-Einstellung prüfen und unten bestätigen."
+        case .eventAccessRequired: "Mausbeobachtung fehlt. Bedienungshilfen / Eingabeüberwachung prüfen."
         }
     }
 
@@ -27,16 +27,18 @@ enum ActivationProblem: String, Identifiable {
                 + "Entferne dann den PalmGuard-Eintrag mit − und füge die aktuelle App mit + erneut hinzu.\n\n"
                 + "Aktuelle App:\n\(appPath)\n\nDanach PalmGuard neu starten."
         case .eventAccessRequired:
-            "macOS konnte den Mausereignisfilter nicht öffnen. Prüfe PalmGuard unter Bedienungshilfen "
+            "macOS konnte die Mausbeobachtung nicht öffnen. Prüfe PalmGuard unter Bedienungshilfen "
                 + "und Eingabeüberwachung. Starte PalmGuard nach der Freigabe neu.\n\nAktuelle App:\n\(appPath)"
         case .trackpadDisconnected:
             "Verbinde ein externes Apple Trackpad. Klicke danach auf „Neu verbinden“ und aktiviere den Schutz erneut."
-        case .identityUnavailable:
-            "Die Herkunft der Klicks lässt sich auf diesem macOS nicht sicher bestimmen. "
-                + "Wähle „Eigene Taps erzeugen“ und folge den dortigen Einrichtungsschritten."
         case .nativeTapsEnabled:
             "Schalte in den macOS-Trackpad-Einstellungen „Tippen zum Klicken“ aus. "
-                + "Bestätige das anschließend in PalmGuard, damit keine doppelten Klicks entstehen."
+                + "PalmGuard übernimmt dann Ein- und Zweifinger-Taps innerhalb deiner Fläche. "
+                + "Druck-Klicks und Drei-Finger-Drags übernimmt weiterhin macOS."
+        case .nativeTapStateUnknown:
+            "PalmGuard kann die aktuelle Tap-Einstellung dieses Trackpads nicht auslesen. "
+                + "Prüfe, dass „Tippen zum Klicken“ in macOS ausgeschaltet ist, und bestätige das in PalmGuard. "
+                + "Sonst können doppelte oder ungefilterte Tap-Klicks entstehen."
         }
     }
 
@@ -44,9 +46,8 @@ enum ActivationProblem: String, Identifiable {
         switch self {
         case .accessibilityRequired: "Bedienungshilfen öffnen"
         case .eventAccessRequired: "Eingabeüberwachung öffnen"
-        case .nativeTapsEnabled: "Trackpad-Einstellungen öffnen"
+        case .nativeTapsEnabled, .nativeTapStateUnknown: "Trackpad-Einstellungen öffnen"
         case .trackpadDisconnected: "Neu verbinden"
-        case .identityUnavailable: "Verstanden"
         }
     }
 }
@@ -54,18 +55,16 @@ enum ActivationProblem: String, Identifiable {
 struct ActivationReadiness {
     var trackpadConnected: Bool
     var accessibilityGranted: Bool
-    var identityAvailable: Bool
-    var mode: ProtectionMode
+    var nativeTapSetting: NativeTapSetting
     var nativeTapsDisabledConfirmed: Bool
-    var nativeTapPreferenceEnabled: Bool
 
     var problem: ActivationProblem? {
         guard trackpadConnected else { return .trackpadDisconnected }
         guard accessibilityGranted else { return .accessibilityRequired }
-        if mode == .filterClicks && !identityAvailable { return .identityUnavailable }
-        if mode == .deliberateTaps && (!nativeTapsDisabledConfirmed || nativeTapPreferenceEnabled) {
-            return .nativeTapsEnabled
+        switch nativeTapSetting {
+        case .enabled: return .nativeTapsEnabled
+        case .unknown where !nativeTapsDisabledConfirmed: return .nativeTapStateUnknown
+        default: return nil
         }
-        return nil
     }
 }

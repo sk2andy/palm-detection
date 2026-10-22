@@ -33,7 +33,7 @@ struct SettingsView: View {
                     }
                     if !model.hasAccessibility {
                         HStack {
-                            Text("Zum Filtern braucht PalmGuard die Freigabe für Bedienungshilfen.")
+                            Text("Zum Erzeugen von Taps braucht PalmGuard die Freigabe für Bedienungshilfen.")
                                 .font(.callout)
                             Spacer()
                             Button("Freigeben …") { model.requestAccessibility() }
@@ -75,34 +75,27 @@ struct SettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Picker("Arbeitsweise", selection: $model.settings.mode) {
-                        ForEach(ProtectionMode.allCases) { Text($0.title).tag($0) }
+                    Text("Nur Taps innerhalb der Fläche").font(.headline)
+                    Text(
+                        "Ein Finger = Linksklick. Zwei Finger = Rechtsklick. Druck-Klicks funktionieren überall. Drei-Finger-Drags bleiben auch mit Fingern außerhalb der Fläche frei."
+                    )
+                    .font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Label(
+                            nativeTapStatus,
+                            systemImage: model.nativeTapSetting == .disabled ? "checkmark.circle" : "info.circle"
+                        )
+                        .foregroundStyle(model.nativeTapSetting == .disabled ? .green : .secondary)
+                        Spacer()
+                        Button("Trackpad-Einstellungen …") { model.openSettings("Trackpad") }
                     }
-                    .pickerStyle(.segmented)
-                    if model.settings.mode == .filterClicks {
-                        Text(
-                            "Filtert Links- und Rechtsklicks des erkannten Trackpads anhand der Fläche und Kontakte. Unbekannte Quellen bleiben frei. Druck-Klicks können ebenfalls betroffen sein."
-                        )
-                        .font(.callout).foregroundStyle(.secondary)
-                        Text(
-                            "Quellen zugeordnet: \(model.matchedCount) · blockiert: \(model.blockedCount) · unbekannt: \(model.unknownSourceCount)"
-                        )
+                    if model.nativeTapSetting == .unknown {
+                        Toggle(
+                            "Natives Tippen zum Klicken ist ausgeschaltet",
+                            isOn: $model.settings.nativeTapsDisabledConfirmed)
+                    }
+                    Text("Erzeugte Tap-Klicks: \(model.postedTapCount)")
                         .font(.caption.monospacedDigit())
-                        if !model.identitySupported {
-                            Text("Klickquellen-Erkennung derzeit nicht verfügbar.").foregroundStyle(.orange)
-                        }
-                    } else {
-                        Text(
-                            "Ein Finger = Linksklick. Zwei Finger = Rechtsklick. Natives „Tippen zum Klicken“ vorher ausschalten, sonst entstehen doppelte Klicks. Druck-Klicks bleiben in diesem Modus erhalten."
-                        )
-                        .font(.callout).foregroundStyle(.secondary)
-                        HStack {
-                            Toggle(
-                                "Natives Tippen zum Klicken ist ausgeschaltet",
-                                isOn: $model.settings.nativeTapsDisabledConfirmed)
-                            Button("Trackpad-Einstellungen …") { model.openSettings("Trackpad") }
-                        }
-                    }
                 }
 
                 DisclosureGroup("Empfindlichkeit & Diagnose") {
@@ -138,7 +131,7 @@ struct SettingsView: View {
                     }.padding(.top, 12)
                 }
                 Text(
-                    "Tastatur und Hyperkey bleiben unverändert. Scrollen und Zeigerbewegung übernimmt weiterhin macOS. Nach Start oder Neuverbinden Schutz bewusst aktivieren."
+                    "Die Fläche gilt ausschließlich für Taps. Druck-Klicks, Scrollen und native Drags übernimmt macOS. Drei-Finger-Ziehen muss in den macOS-Bedienungshilfen aktiviert sein. Tastatur und Hyperkey bleiben unverändert."
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
@@ -151,6 +144,14 @@ struct SettingsView: View {
                 message: Text(problem.explanation(appPath: model.appPath)),
                 primaryButton: .default(Text(problem.recoveryTitle)) { model.recoverActivation(problem) },
                 secondaryButton: .cancel(Text("Schließen")))
+        }
+    }
+
+    private var nativeTapStatus: String {
+        switch model.nativeTapSetting {
+        case .disabled: "macOS-Tippen zum Klicken: aus · PalmGuard übernimmt"
+        case .enabled: "macOS-Tippen zum Klicken zuerst ausschalten"
+        case .unknown: "macOS-Tap-Einstellung bitte selbst prüfen"
         }
     }
 

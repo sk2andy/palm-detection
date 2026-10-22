@@ -7,17 +7,13 @@ struct ActivationReadinessTests {
     private var ready: ActivationReadiness {
         ActivationReadiness(
             trackpadConnected: true, accessibilityGranted: true,
-            identityAvailable: true, mode: .filterClicks,
-            nativeTapsDisabledConfirmed: false, nativeTapPreferenceEnabled: false)
+            nativeTapSetting: .disabled, nativeTapsDisabledConfirmed: false)
     }
 
-    @Test func missingAccessibilityBlocksBothModes() {
-        for mode in ProtectionMode.allCases {
-            var state = ready
-            state.mode = mode
-            state.accessibilityGranted = false
-            #expect(state.problem == .accessibilityRequired)
-        }
+    @Test func missingAccessibilityPreventsSyntheticClicks() {
+        var state = ready
+        state.accessibilityGranted = false
+        #expect(state.problem == .accessibilityRequired)
     }
 
     @Test func recoveryNamesTheInstalledBundleRatherThanAGuessedApplicationsFolder() {
@@ -28,22 +24,24 @@ struct ActivationReadinessTests {
         #expect(explanation.contains("erneut hinzu"))
     }
 
-    @Test func nativeClickFilteringRequiresKnownDeviceIdentity() {
-        var state = ready
-        #expect(state.problem == nil)
-        state.identityAvailable = false
-        #expect(state.problem == .identityUnavailable)
+    @Test func disabledNativeTapsNeedNoManualConfirmation() {
+        #expect(ready.problem == nil)
     }
 
-    @Test func generatedTapsRequireConfirmationAndDisabledNativeTaps() {
+    @Test func knownEnabledNativeTapsCannotBeOverriddenByConfirmation() {
         var state = ready
-        state.mode = .deliberateTaps
-        state.identityAvailable = false
+        state.nativeTapSetting = .enabled
         #expect(state.problem == .nativeTapsEnabled)
         state.nativeTapsDisabledConfirmed = true
-        #expect(state.problem == nil)
-        state.nativeTapPreferenceEnabled = true
         #expect(state.problem == .nativeTapsEnabled)
+    }
+
+    @Test func unknownNativeTapSettingRequiresExplicitConfirmation() {
+        var state = ready
+        state.nativeTapSetting = .unknown
+        #expect(state.problem == .nativeTapStateUnknown)
+        state.nativeTapsDisabledConfirmed = true
+        #expect(state.problem == nil)
     }
 
     @Test func disconnectedDevicePreventsActivationEvenWithPermissions() {

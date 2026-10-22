@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <CoreGraphics/CoreGraphics.h>
 
 typedef enum {
     PDMTStatusOK = 0,
@@ -50,9 +49,8 @@ void pd_mt_stop(void);
 /* Thread-safe snapshot. Returns false when monitoring is stopped. */
 bool pd_mt_get_info(PDMTDeviceInfo *info);
 const char *pd_mt_status_message(PDMTStatus status);
-/* Identity is private API, resolved dynamically. Unknown sources never match. */
-bool pd_mt_event_identity_supported(void);
-bool pd_mt_event_matches_device(CGEventRef event);
-uint64_t pd_mt_event_sender_id(CGEventRef event);
+/* Active selected driver's native tap-to-click setting: -1 unknown, 0 off, 1 on.
+ * Call on the serialized owner thread, never inside a frame callback. */
+int pd_mt_native_tap_setting(void);
 
 #endif

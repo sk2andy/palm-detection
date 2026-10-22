@@ -10,7 +10,7 @@ let package = Package(
         .target(
             name: "MultitouchBridge",
             linkerSettings: [
-                .linkedFramework("CoreFoundation"), .linkedFramework("CoreGraphics"), .linkedFramework("IOKit"),
+                .linkedFramework("CoreFoundation"), .linkedFramework("IOKit"),
             ]),
         .executableTarget(name: "PalmGuard", dependencies: ["PalmGuardCore", "MultitouchBridge"]),
         .testTarget(name: "PalmGuardCoreTests", dependencies: ["PalmGuardCore"]),

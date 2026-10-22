@@ -20,9 +20,22 @@
 
 ## Important boundary
 
-Native mouse events do not expose reliable tap provenance. Prefer replacing native tap-to-click
-with deliberate synthetic taps, rather than guessing which mouse events to suppress. Clarify
-pressure-click behavior with the user before adding suppression.
+Native mouse events do not expose reliable tap provenance. Never suppress native mouse events.
+Use a listen-only pointer observer and generate approved taps with native tap-to-click disabled.
+Pressure clicks, force clicks and native drags must work across the entire trackpad.
+Native three-finger dragging remains independent of the permitted tap rectangle.
+
+## Preserve native clicks and dragging — 0.2.0
+
+- Remove the native-click filtering mode and its private event-identity integration.
+- Preserve all native mouse events using `listenOnly`; do not suppress any event sequence.
+- Recognize one- and two-finger taps only inside the configured rectangle.
+- Veto synthetic taps for three or more finger-sized raw contacts before area selection;
+  retain the veto through staggered releases so a native drag cannot become a two-finger tap.
+- Keep broad resting palms independent of finger taps; document relative-size ambiguity.
+- Read native tap-to-click from the selected trackpad's active driver, not cached defaults.
+- Preserve previously configured areas when migrating from either old mode.
+- Verify native tap-to-click is off and maintain the separately configured three-finger drag.
 
 ## Activation recovery
 

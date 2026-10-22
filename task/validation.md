@@ -31,6 +31,27 @@
 Do not rebuild or re-sign the installed ad hoc app after granting permission without planning
 another explicit permission repair. Source commits and CI builds do not modify the installed app.
 
+## Preserve native pressure clicks and three-finger dragging — 0.2.0
+
+| Check | Result |
+| --- | --- |
+| Automated tests | 71 tests, 8 suites passed |
+| System mouse event preservation | Observer uses `listenOnly`; tests verify event data unchanged |
+| Keyboard / modifier hooks | Excluded from the observation mask |
+| Raw three fingers with one outside area | Synthetic tap vetoed before area selection |
+| Staggered three-finger release | Cannot become a synthetic one-/two-finger tap |
+| Broad resting palm plus two fingers | Deliberate tap remains possible |
+| Settings migration | Both legacy modes preserve the calibrated rectangle |
+| Selected-driver native tap setting | Live getter replaces stale defaults reads |
+| C warnings / Swift formatting / release signing | Passed |
+| macOS native tap-to-click | Switched off with explicit user approval; app confirmed live driver state |
+| Native three-finger dragging | Enabled in macOS before update; hardware check remains human-operated |
+| Updated Accessibility permission | Awaiting user's macOS authentication dialog |
+
+The native-click suppression mode, private sender-identity SPI and suppression sequence state
+have been removed. Physical clicks and drags are always delivered by macOS; PalmGuard adds
+only approved tap events. No new installed build should follow the pending permission grant.
+
 Two agent reviews checked input-device ownership, callback lifetime, delayed event delivery,
 geometry, gesture state, and code structure. Findings addressed before initial publication.
 

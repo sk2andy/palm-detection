@@ -1,5 +1,5 @@
-/// Coordinates palm selection, complete tap recognition, and fresh click evidence.
-/// Keyboard handling, device attribution, and posting mouse events stay outside this type.
+/// Recognizes deliberate taps without suppressing any native mouse or keyboard event.
+/// Native gestures are excluded using the complete raw contact frame before area selection.
 public struct PalmGestureEngine: Sendable {
     public var configuration: TapConfiguration {
         didSet { reset() }
@@ -7,35 +7,28 @@ public struct PalmGestureEngine: Sendable {
 
     private var selector = PalmContactSelector()
     private var recognizer: TapRecognizer
-    private var clickFilter: ClickEvidenceFilter
-    private var rawStreamSynchronized = false
     private var lastTimestamp: Double?
-    private var eligibleCount = 0
-    private var ignoredCount = 0
-    private var activeViolation = false
-    private var completedViolationAt: Double?
-    private var completedIgnoredContactAt: Double?
-    private var completedAcceptedTapAt: Double?
-    private static let freshnessInterval = 0.15
+    private var rawContactCount = 0
+    private var requiresFingerRelease = true
+    private var sawUnsynchronizedContact = false
+    private var nativeGestureContactIDs: Set<Int> = []
+    private static let maximumFrameGap = 0.15
 
     public init(configuration: TapConfiguration = TapConfiguration()) {
         self.configuration = configuration
         recognizer = TapRecognizer(configuration: configuration)
-        clickFilter = ClickEvidenceFilter(configuration: configuration)
     }
 
+    /// Require a finger-free frame after startup, settings changes, or a broken input stream.
+    /// A broad resting palm may stay on the surface while the recognizer re-arms.
     public mutating func reset() {
         selector.reset()
         recognizer = TapRecognizer(configuration: configuration)
-        clickFilter = ClickEvidenceFilter(configuration: configuration)
-        rawStreamSynchronized = false
         lastTimestamp = nil
-        eligibleCount = 0
-        ignoredCount = 0
-        activeViolation = false
-        completedViolationAt = nil
-        completedIgnoredContactAt = nil
-        completedAcceptedTapAt = nil
+        rawContactCount = 0
+        requiresFingerRelease = true
+        sawUnsynchronizedContact = false
+        nativeGestureContactIDs.removeAll()
     }
 
     public mutating func cancelCurrentGesture() {
@@ -52,70 +45,61 @@ public struct PalmGestureEngine: Sendable {
             return .rejected(reason: .invalidData)
         }
 
+        let fingerIDs = Set(contacts.filter { $0.size <= configuration.sanitized.maximumSize }.map(\.id))
         if let previousTimestamp = lastTimestamp,
-            eligibleCount + ignoredCount > 0,
-            timestamp - previousTimestamp > Self.freshnessInterval
+            rawContactCount > 0,
+            timestamp - previousTimestamp > Self.maximumFrameGap
         {
             reset()
             lastTimestamp = timestamp
-            if contacts.isEmpty {
-                rawStreamSynchronized = true
-                _ = recognizer.process(contacts: [], timestamp: timestamp)
-                clickFilter.update(contacts: [], timestamp: timestamp)
-            }
+            rawContactCount = contacts.count
+            if fingerIDs.isEmpty { arm(with: contacts, at: timestamp) }
             return .rejected(reason: .interrupted)
         }
-
         lastTimestamp = timestamp
-        if contacts.isEmpty { rawStreamSynchronized = true }
+        rawContactCount = contacts.count
+
+        if requiresFingerRelease {
+            guard fingerIDs.isEmpty else {
+                sawUnsynchronizedContact = true
+                return nil
+            }
+            let needsStartupRejection = sawUnsynchronizedContact
+            arm(with: contacts, at: timestamp)
+            return needsStartupRejection ? .rejected(reason: .notReady) : nil
+        }
+
+        if !nativeGestureContactIDs.isEmpty {
+            nativeGestureContactIDs.formIntersection(contacts.map(\.id))
+            nativeGestureContactIDs.formUnion(fingerIDs)
+            if nativeGestureContactIDs.isEmpty { arm(with: contacts, at: timestamp) }
+            return nil
+        }
+
+        // Count fingers across the entire surface: an outside finger still belongs to a
+        // native three-finger drag. Broad palms do not turn a deliberate two-finger tap into three.
+        if fingerIDs.count >= 3 {
+            nativeGestureContactIDs = fingerIDs
+            selector.reset()
+            recognizer.reset()
+            return .rejected(reason: .tooManyFingers)
+        }
 
         let selection = selector.select(contacts: contacts, configuration: configuration)
-        let startsNewFingerGesture = eligibleCount == 0 && !selection.eligible.isEmpty
-        if startsNewFingerGesture {
-            completedViolationAt = nil
-            completedIgnoredContactAt = nil
-            completedAcceptedTapAt = nil
-        }
         if selection.invalidated {
-            // Do this before processing a potentially empty eligible frame: leaving the area is
-            // not a finger release and must never complete a successful tap.
+            // Leaving the permitted area is not a release and must never finish an accepted tap.
             recognizer.cancelCurrentGesture()
-            activeViolation = true
         }
-        if selection.eligible.isEmpty && activeViolation {
-            completedViolationAt = timestamp
-            activeViolation = false
-        }
-        if contacts.isEmpty && eligibleCount == 0 && ignoredCount > 0 {
-            completedIgnoredContactAt = timestamp
-        }
-        eligibleCount = selection.eligible.count
-        ignoredCount = selection.ignored.count
-
-        clickFilter.update(contacts: selection.eligible, timestamp: timestamp)
-        let decision = recognizer.process(contacts: selection.eligible, timestamp: timestamp)
-        if let decision {
-            clickFilter.finish(decision: decision, timestamp: timestamp)
-            if case .accepted = decision { completedAcceptedTapAt = timestamp }
-        }
-        return decision
+        return recognizer.process(contacts: selection.eligible, timestamp: timestamp)
     }
 
-    /// Call only for a click independently attributed to the selected trackpad.
-    public func shouldBlockClick(at timestamp: Double) -> Bool {
-        guard rawStreamSynchronized, let lastTimestamp, isFresh(lastTimestamp, at: timestamp) else { return false }
-        if eligibleCount > 0 {
-            return activeViolation || clickFilter.shouldBlock(at: timestamp)
-        }
-        // Native tap clicks can arrive after the intentional fingers lift while the wrist stays.
-        if let completedAcceptedTapAt, isFresh(completedAcceptedTapAt, at: timestamp) { return false }
-        if ignoredCount > 0 { return true }
-        return completedViolationAt.map { isFresh($0, at: timestamp) } == true
-            || completedIgnoredContactAt.map { isFresh($0, at: timestamp) } == true
-            || clickFilter.shouldBlock(at: timestamp)
-    }
-
-    private func isFresh(_ evidenceTimestamp: Double, at timestamp: Double) -> Bool {
-        timestamp.isFinite && (0...Self.freshnessInterval).contains(timestamp - evidenceTimestamp)
+    private mutating func arm(with contacts: [TouchContact], at timestamp: Double) {
+        requiresFingerRelease = false
+        sawUnsynchronizedContact = false
+        selector.reset()
+        // Remember broad contacts already resting here so later shrinking cannot turn them into taps.
+        _ = selector.select(contacts: contacts, configuration: configuration)
+        recognizer.reset()
+        _ = recognizer.process(contacts: [], timestamp: timestamp)
     }
 }

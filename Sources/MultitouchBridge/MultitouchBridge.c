@@ -51,34 +51,6 @@ static bool accepting_frames;
 static PDMTFrameCallback client_callback;
 static void *client_context;
 static PDMTDeviceInfo selected_info;
-static uint64_t selected_driver_id;
-static CFTypeRef (*copy_hid_event)(CGEventRef);
-static uint64_t (*get_sender_id)(CFTypeRef);
-static pthread_once_t event_identity_once = PTHREAD_ONCE_INIT;
-
-static void load_event_identity(void) {
-    /* Signatures verified in LinearMouse's public source:
-     * https://github.com/linearmouse/linearmouse/blob/main/LinearMouse/LinearMouse-Bridging-Header.h
-     * These frameworks are also linked by this target; keep missing SPI optional. */
-    *(void **)(&copy_hid_event) = dlsym(RTLD_DEFAULT, "CGEventCopyIOHIDEvent");
-    *(void **)(&get_sender_id) = dlsym(RTLD_DEFAULT, "IOHIDEventGetSenderID");
-}
-
-static uint64_t trackpad_driver_id(MTDevice device) {
-    io_service_t service = api.get_service(device);
-    io_registry_entry_t parent = IO_OBJECT_NULL;
-    uint64_t identifier = 0;
-    if (service && IORegistryEntryGetParentEntry(service, kIOServicePlane, &parent) == KERN_SUCCESS) {
-        /* Only this immediate, trackpad-specific driver is an accepted alias.
-         * Do not accept shared USB/Bluetooth ancestors or other HID siblings. */
-        if (IOObjectConformsTo(parent, "AppleMultitouchTrackpadHIDEventDriver")) {
-            IORegistryEntryGetRegistryEntryID(parent, &identifier);
-        }
-        IOObjectRelease(parent);
-    }
-    return identifier;
-}
-
 static PDMTStatus load_framework(void) {
     if (!api.library) {
         api.library = dlopen("/System/Library/PrivateFrameworks/MultitouchSupport.framework/MultitouchSupport",
@@ -176,7 +148,6 @@ PDMTStatus pd_mt_start(bool include_builtin, PDMTFrameCallback callback, void *c
     pd_mt_stop();
     PDMTStatus status = load_framework();
     if (status != PDMTStatusOK) return status;
-    pthread_once(&event_identity_once, load_event_identity);
     CFArrayRef list = api.create_list();
     if (!list) return PDMTStatusNoTrackpad;
 
@@ -199,13 +170,11 @@ PDMTStatus pd_mt_start(bool include_builtin, PDMTFrameCallback callback, void *c
         return PDMTStatusNoTrackpad;
     }
     chosen_info.available_trackpads = available;
-    uint64_t driver_id = trackpad_driver_id(chosen);
 
     pthread_mutex_lock(&callback_lock);
     device_list = list; /* Keep every handle alive until unregister + stop. */
     selected_device = chosen;
     selected_info = chosen_info;
-    selected_driver_id = driver_id;
     client_callback = callback;
     client_context = context;
     accepting_frames = false;
@@ -232,7 +201,6 @@ void pd_mt_stop(void) {
     selected_device = NULL;
     device_list = NULL;
     memset(&selected_info, 0, sizeof(selected_info));
-    selected_driver_id = 0;
     pthread_mutex_unlock(&callback_lock);
 
     /* Framework calls can themselves wait for callbacks. Never hold our lock. */
@@ -252,6 +220,31 @@ bool pd_mt_get_info(PDMTDeviceInfo *info) {
     return running;
 }
 
+int pd_mt_native_tap_setting(void) {
+    pthread_mutex_lock(&callback_lock);
+    uint64_t registry_id = accepting_frames ? selected_info.registry_id : 0;
+    pthread_mutex_unlock(&callback_lock);
+    if (!registry_id) return -1;
+
+    CFMutableDictionaryRef matching = IORegistryEntryIDMatching(registry_id);
+    if (!matching) return -1;
+    /* Resolve exactly the selected driver; never read a shared ancestor or a
+     * different trackpad's defaults. IOServiceGetMatchingService consumes matching. */
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, matching);
+    if (!service) return -1;
+    CFTypeRef preferences = property(service, CFSTR("MultitouchPreferences"));
+    IOObjectRelease(service);
+    int result = -1;
+    if (preferences && CFGetTypeID(preferences) == CFDictionaryGetTypeID()) {
+        CFTypeRef clicking = CFDictionaryGetValue((CFDictionaryRef)preferences, CFSTR("Clicking"));
+        if (clicking && CFGetTypeID(clicking) == CFBooleanGetTypeID()) {
+            result = CFBooleanGetValue((CFBooleanRef)clicking) ? 1 : 0;
+        }
+    }
+    if (preferences) CFRelease(preferences);
+    return result;
+}
+
 const char *pd_mt_status_message(PDMTStatus status) {
     switch (status) {
         case PDMTStatusOK: return "Trackpad connected";
@@ -262,33 +255,4 @@ const char *pd_mt_status_message(PDMTStatus status) {
         case PDMTStatusInvalidArgument: return "Missing frame callback";
     }
     return "Unknown trackpad error";
-}
-
-bool pd_mt_event_identity_supported(void) {
-    return copy_hid_event != NULL && get_sender_id != NULL;
-}
-
-uint64_t pd_mt_event_sender_id(CGEventRef event) {
-    if (!event || !pd_mt_event_identity_supported()) return 0;
-    CGEventType type = CGEventGetType(event);
-    /* Copying HID payloads for keyboard events can be unsafe on some versions.
-     * Restrict inspection to pointer presses, releases and their drags. */
-    if (type != kCGEventLeftMouseDown && type != kCGEventLeftMouseUp
-        && type != kCGEventRightMouseDown && type != kCGEventRightMouseUp
-        && type != kCGEventLeftMouseDragged && type != kCGEventRightMouseDragged) return 0;
-    CFTypeRef hid_event = copy_hid_event(event);
-    if (!hid_event) return 0;
-    uint64_t sender = get_sender_id(hid_event);
-    CFRelease(hid_event);
-    return sender;
-}
-
-bool pd_mt_event_matches_device(CGEventRef event) {
-    uint64_t sender = pd_mt_event_sender_id(event);
-    if (!sender) return false;
-    pthread_mutex_lock(&callback_lock);
-    bool matches = accepting_frames
-        && (sender == selected_info.registry_id || sender == selected_driver_id);
-    pthread_mutex_unlock(&callback_lock);
-    return matches;
 }

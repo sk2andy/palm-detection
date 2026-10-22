@@ -1,41 +1,41 @@
 import AppKit
 import CoreGraphics
-import MultitouchBridge
-import PalmGuardCore
 
 @MainActor
 final class MouseEventService {
     static let eventMarker: Int64 = 0x5041_4C4D
-    var shouldBlock: ((Bool) -> Bool)?
     var onPhysicalActivity: (() -> Void)?
     var onTapDisabled: (() -> Void)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-    private var sequences = PointerSequenceFilter()
     private var isInvalidating = false
     private var previousClick: (time: TimeInterval, point: CGPoint, button: CGMouseButton, count: Int64)?
 
     var isRunning: Bool { tap != nil && !isInvalidating }
 
+    static let observationOptions = CGEventTapOptions.listenOnly
+    static let observedEvents: [CGEventType] = [
+        .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+        .otherMouseDown, .otherMouseUp,
+        .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel,
+    ]
+
     func start() -> Bool {
         guard !isInvalidating else { return false }
         if tap != nil { return true }
-        let types: [CGEventType] = [
-            .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-            .leftMouseDragged, .rightMouseDragged, .scrollWheel,
-        ]
-        let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        let mask = Self.observedEvents.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         guard
             let port = CGEvent.tapCreate(
-                tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                tap: .cgSessionEventTap, place: .tailAppendEventTap, options: Self.observationOptions,
                 eventsOfInterest: mask,
                 callback: { _, type, event, context in
                     guard let context else { return Unmanaged.passUnretained(event) }
-                    let pass = MainActor.assumeIsolated {
+                    MainActor.assumeIsolated {
                         let service = Unmanaged<MouseEventService>.fromOpaque(context).takeUnretainedValue()
-                        return service.handle(type: type, event: event) != nil
+                        service.observe(type: type, event: event)
                     }
-                    return pass ? Unmanaged.passUnretained(event) : nil
+                    // listenOnly additionally guarantees that macOS ignores callback return values.
+                    return Unmanaged.passUnretained(event)
                 },
                 userInfo: Unmanaged.passUnretained(self).toOpaque()
             )
@@ -56,7 +56,6 @@ final class MouseEventService {
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         source = nil
         tap = nil
-        sequences.reset()
         previousClick = nil
         isInvalidating = false
     }
@@ -65,6 +64,7 @@ final class MouseEventService {
         guard (1...2).contains(fingers), AXIsProcessTrusted(),
             !CGEventSource.buttonState(.combinedSessionState, button: .left),
             !CGEventSource.buttonState(.combinedSessionState, button: .right),
+            !CGEventSource.buttonState(.combinedSessionState, button: .center),
             let position = CGEvent(source: nil)?.location
         else { return false }
         let button: CGMouseButton = fingers == 1 ? .left : .right
@@ -99,54 +99,28 @@ final class MouseEventService {
         return true
     }
 
-    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    func observe(type: CGEventType, event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            guard !isInvalidating else { return Unmanaged.passUnretained(event) }
-            sequences.reset()
+            guard !isInvalidating else { return }
             isInvalidating = true
             onTapDisabled?()
             // Never fight a permission revocation by re-enabling the tap.
             // Invalidate outside the synchronous WindowServer callback.
             DispatchQueue.main.async { [weak self] in self?.stop() }
-            return Unmanaged.passUnretained(event)
+            return
         }
-        if isInvalidating { return Unmanaged.passUnretained(event) }
+        if isInvalidating { return }
         if event.getIntegerValueField(.eventSourceUserData) == Self.eventMarker {
-            return Unmanaged.passUnretained(event)
+            return
         }
-        let button = event.getIntegerValueField(.mouseEventButtonNumber)
-        let senderID = pd_mt_event_sender_id(event)
-        let eventNumber = event.getIntegerValueField(.mouseEventNumber)
         switch type {
-        case .leftMouseUp, .rightMouseUp:
-            if sequences.shouldSuppress(
-                phase: .up, senderID: senderID,
-                button: button, eventNumber: eventNumber)
-            {
-                return nil
-            }
-        case .leftMouseDragged, .rightMouseDragged:
-            if sequences.shouldSuppress(
-                phase: .drag, senderID: senderID,
-                button: button, eventNumber: eventNumber)
-            {
-                return nil
-            }
-        case .leftMouseDown, .rightMouseDown:
-            let matches = pd_mt_event_matches_device(event)
-            let block = shouldBlock?(matches) ?? false
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             onPhysicalActivity?()
             previousClick = nil
-            if sequences.shouldSuppress(
-                phase: .down, senderID: senderID,
-                button: button, eventNumber: eventNumber, blockNewPress: block)
-            {
-                return nil
-            }
-        case .scrollWheel:
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp,
+            .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel:
             onPhysicalActivity?()
         default: break
         }
-        return Unmanaged.passUnretained(event)
     }
 }

@@ -10,9 +10,7 @@ final class AppModel: ObservableObject {
             SettingsStore.save(settings)
             engine.configuration = settings.configuration
             cancelPendingTap()
-            if oldValue.mode != settings.mode
-                || oldValue.nativeTapsDisabledConfirmed != settings.nativeTapsDisabledConfirmed
-            {
+            if oldValue.nativeTapsDisabledConfirmed != settings.nativeTapsDisabledConfirmed {
                 isEnabled = false
                 status = "Vorschau – Schutz pausiert"
             }
@@ -25,11 +23,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var lastDecision = "Trackpad einmal vollständig loslassen."
     @Published private(set) var acceptedCount = 0
     @Published private(set) var rejectedCount = 0
-    @Published private(set) var blockedCount = 0
-    @Published private(set) var matchedCount = 0
-    @Published private(set) var unknownSourceCount = 0
+    @Published private(set) var postedTapCount = 0
     @Published private(set) var hasAccessibility = AXIsProcessTrusted()
-    @Published private(set) var identitySupported = false
+    @Published private(set) var nativeTapSetting: NativeTapSetting = .unknown
     @Published private(set) var frameCount = 0
     @Published var activationProblem: ActivationProblem?
     var appPath: String { Bundle.main.bundleURL.path }
@@ -49,7 +45,6 @@ final class AppModel: ObservableObject {
         settings = saved
         engine = PalmGestureEngine(configuration: saved.configuration)
         stream.onFrame = { [weak self] contacts, time in self?.receive(contacts, at: time) }
-        mouse.shouldBlock = { [weak self] matches in self?.shouldBlockClick(matches: matches) ?? false }
         mouse.onPhysicalActivity = { [weak self] in
             self?.engine.cancelCurrentGesture()
             self?.cancelPendingTap()
@@ -57,7 +52,7 @@ final class AppModel: ObservableObject {
         mouse.onTapDisabled = { [weak self] in
             self?.isEnabled = false
             self?.resetRecognition()
-            self?.status = "Schutz pausiert: Ereignisfilter wurde von macOS unterbrochen."
+            self?.status = "Schutz pausiert: Mausbeobachtung wurde von macOS unterbrochen."
         }
     }
 
@@ -95,7 +90,7 @@ final class AppModel: ObservableObject {
             deviceName = stream.deviceName
             status = "Vorschau – Schutz pausiert"
         }
-        identitySupported = pd_mt_event_identity_supported()
+        refreshNativeTapSetting()
     }
 
     func toggleProtection() {
@@ -109,9 +104,8 @@ final class AppModel: ObservableObject {
         refreshPermissions()
         let readiness = ActivationReadiness(
             trackpadConnected: stream.isRunning, accessibilityGranted: hasAccessibility,
-            identityAvailable: identitySupported, mode: settings.mode,
-            nativeTapsDisabledConfirmed: settings.nativeTapsDisabledConfirmed,
-            nativeTapPreferenceEnabled: SettingsStore.nativeTapPreferenceEnabled)
+            nativeTapSetting: nativeTapSetting,
+            nativeTapsDisabledConfirmed: settings.nativeTapsDisabledConfirmed)
         if let problem = readiness.problem {
             reportActivationProblem(problem)
             return
@@ -122,16 +116,15 @@ final class AppModel: ObservableObject {
         }
         resetRecognition()
         isEnabled = true
-        status = settings.mode == .filterClicks ? "Klickfilter aktiv" : "Eigene Taps aktiv"
+        status = "Tap-Schutz aktiv · Druck-Klicks und Drags frei"
     }
 
     func recoverActivation(_ problem: ActivationProblem) {
         switch problem {
         case .accessibilityRequired: requestAccessibility()
         case .eventAccessRequired: openSettings("Privacy_ListenEvent")
-        case .nativeTapsEnabled: openSettings("Trackpad")
+        case .nativeTapsEnabled, .nativeTapStateUnknown: openSettings("Trackpad")
         case .trackpadDisconnected: reconnect()
-        case .identityUnavailable: break
         }
     }
 
@@ -191,19 +184,18 @@ final class AppModel: ObservableObject {
         case .accepted(let fingers):
             acceptedCount += 1
             lastDecision = "\(fingers)-Finger-Tap erkannt"
-            guard isEnabled, settings.mode == .deliberateTaps else { return }
+            guard isEnabled else { return }
             cancelPendingTap()
             guard let releasePosition = CGEvent(source: nil)?.location else { return }
             let releaseApplication = NSWorkspace.shared.frontmostApplication?.processIdentifier
             let work = DispatchWorkItem { [weak self] in
-                guard let self, self.isEnabled, self.settings.mode == .deliberateTaps,
+                guard let self, self.isEnabled, self.nativeTapsAreDisabled(),
                     ProcessInfo.processInfo.systemUptime - time < 0.12,
                     NSWorkspace.shared.frontmostApplication?.processIdentifier == releaseApplication,
                     let currentPosition = CGEvent(source: nil)?.location,
-                    hypot(currentPosition.x - releasePosition.x, currentPosition.y - releasePosition.y) < 4,
-                    !SettingsStore.nativeTapPreferenceEnabled
+                    hypot(currentPosition.x - releasePosition.x, currentPosition.y - releasePosition.y) < 4
                 else { return }
-                _ = self.mouse.postTap(fingers: fingers)
+                if self.mouse.postTap(fingers: fingers) { self.postedTapCount += 1 }
                 self.pendingTap = nil
             }
             pendingTap = work
@@ -215,26 +207,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func shouldBlockClick(matches: Bool) -> Bool {
-        guard isEnabled, settings.mode == .filterClicks else { return false }
-        guard matches else {
-            unknownSourceCount += 1
-            return false
-        }
-        matchedCount += 1
-        let block = engine.shouldBlockClick(at: ProcessInfo.processInfo.systemUptime)
-        if block { blockedCount += 1 }
-        return block
+    private func refreshNativeTapSetting() {
+        nativeTapSetting = NativeTapSetting(rawValue: Int(pd_mt_native_tap_setting())) ?? .unknown
+    }
+
+    private func nativeTapsAreDisabled() -> Bool {
+        refreshNativeTapSetting()
+        return nativeTapSetting == .disabled
+            || (nativeTapSetting == .unknown && settings.nativeTapsDisabledConfirmed)
     }
 
     private func refreshPermissions() {
         hasAccessibility = AXIsProcessTrusted()
-        if isEnabled
-            && (!hasAccessibility || (settings.mode == .deliberateTaps && SettingsStore.nativeTapPreferenceEnabled))
-        {
+        let nativeTapsDisabled = nativeTapsAreDisabled()
+        if isEnabled && (!hasAccessibility || !nativeTapsDisabled) {
             isEnabled = false
             resetRecognition()
-            status = "Schutz pausiert: Berechtigung oder Tap-Einstellung geändert."
+            status =
+                hasAccessibility
+                ? "Schutz pausiert: macOS-Tap-Einstellung geändert."
+                : "Schutz pausiert: Bedienungshilfen-Freigabe fehlt."
         }
         if !contacts.isEmpty && ProcessInfo.processInfo.systemUptime - lastFrameTime > 0.5 {
             resetRecognition()
