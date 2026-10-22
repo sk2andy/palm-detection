@@ -18,4 +18,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: PalmGuard-macOS
-          path: dist/PalmGuard.app
+          path: dist/PalmGuard.zip
