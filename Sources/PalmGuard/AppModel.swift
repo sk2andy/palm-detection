@@ -31,6 +31,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var hasAccessibility = AXIsProcessTrusted()
     @Published private(set) var identitySupported = false
     @Published private(set) var frameCount = 0
+    @Published var activationProblem: ActivationProblem?
+    var appPath: String { Bundle.main.bundleURL.path }
 
     private let stream = TouchStream()
     private let mouse = MouseEventService()
@@ -97,6 +99,7 @@ final class AppModel: ObservableObject {
     }
 
     func toggleProtection() {
+        activationProblem = nil
         if isEnabled {
             isEnabled = false
             resetRecognition()
@@ -104,31 +107,43 @@ final class AppModel: ObservableObject {
             return
         }
         refreshPermissions()
-        guard stream.isRunning else {
-            status = "Externes Trackpad verbinden und neu verbinden."
+        let readiness = ActivationReadiness(
+            trackpadConnected: stream.isRunning, accessibilityGranted: hasAccessibility,
+            identityAvailable: identitySupported, mode: settings.mode,
+            nativeTapsDisabledConfirmed: settings.nativeTapsDisabledConfirmed,
+            nativeTapPreferenceEnabled: SettingsStore.nativeTapPreferenceEnabled)
+        if let problem = readiness.problem {
+            reportActivationProblem(problem)
             return
-        }
-        guard hasAccessibility else {
-            status = "Bedienungshilfen für PalmGuard freigeben."
-            return
-        }
-        if settings.mode == .filterClicks && !identitySupported {
-            status = "Klickquelle auf diesem macOS nicht verfügbar. Eigene Taps verwenden."
-            return
-        }
-        if settings.mode == .deliberateTaps {
-            guard settings.nativeTapsDisabledConfirmed, !SettingsStore.nativeTapPreferenceEnabled else {
-                status = "Zuerst natives Tippen zum Klicken ausschalten und unten bestätigen."
-                return
-            }
         }
         guard mouse.start() else {
-            status = "Ereigniszugriff fehlt. Bedienungshilfen / Eingabeüberwachung prüfen."
+            reportActivationProblem(.eventAccessRequired)
             return
         }
         resetRecognition()
         isEnabled = true
         status = settings.mode == .filterClicks ? "Klickfilter aktiv" : "Eigene Taps aktiv"
+    }
+
+    func recoverActivation(_ problem: ActivationProblem) {
+        switch problem {
+        case .accessibilityRequired: requestAccessibility()
+        case .eventAccessRequired: openSettings("Privacy_ListenEvent")
+        case .nativeTapsEnabled: openSettings("Trackpad")
+        case .trackpadDisconnected: reconnect()
+        case .identityUnavailable: break
+        }
+    }
+
+    func revealApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    private func reportActivationProblem(_ problem: ActivationProblem) {
+        isEnabled = false
+        resetRecognition()
+        status = problem.status
+        activationProblem = problem
     }
 
     func requestAccessibility() {

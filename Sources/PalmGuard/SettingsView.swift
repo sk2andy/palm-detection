@@ -38,6 +38,12 @@ struct SettingsView: View {
                             Spacer()
                             Button("Freigeben …") { model.requestAccessibility() }
                         }
+                        HStack {
+                            Text("Freigabe schon an? PalmGuard entfernen und diese App erneut hinzufügen.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("App im Finder zeigen") { model.revealApp() }
+                        }
                     }
                 }
                 .padding(16)
@@ -139,6 +145,13 @@ struct SettingsView: View {
             .padding(28)
         }
         .frame(width: 780, height: 820)
+        .alert(item: $model.activationProblem) { problem in
+            Alert(
+                title: Text("Schutz kann nicht aktiviert werden"),
+                message: Text(problem.explanation(appPath: model.appPath)),
+                primaryButton: .default(Text(problem.recoveryTitle)) { model.recoverActivation(problem) },
+                secondaryButton: .cancel(Text("Schließen")))
+        }
     }
 
     private func settingSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, valueText: String)

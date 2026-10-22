@@ -15,6 +15,22 @@
 | Effective click suppression on physical trackpad | Pending Accessibility permission and human touch test |
 | Raycast Hyperkey shortcuts | Event mask excludes keyboard; actual user shortcuts not yet tested |
 
+## Activation recovery — 0.1.1
+
+| Check | Result |
+| --- | --- |
+| Root cause | macOS rejected the stored Accessibility code requirement from an older build |
+| Recovery scope | Only PalmGuard Accessibility reset, with explicit user approval |
+| Regrant | Final installed bundle added through macOS Settings after building |
+| Actual activation | Passed: installed app showed “Klickfilter aktiv” and “Pausieren” |
+| User configuration | Custom area preserved across update and permission repair |
+| Failed activation feedback | Native alert displayed, with real bundle path and recovery action |
+| Tests after activation changes | 80 tests, 8 suites passed |
+| Formatting and release bundle | Passed; installed signature verified |
+
+Do not rebuild or re-sign the installed ad hoc app after granting permission without planning
+another explicit permission repair. Source commits and CI builds do not modify the installed app.
+
 Two agent reviews checked input-device ownership, callback lifetime, delayed event delivery,
 geometry, gesture state, and code structure. Findings addressed before initial publication.
 

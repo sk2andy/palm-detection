@@ -33,6 +33,17 @@ PALMGUARD_SIGNING_IDENTITY='Developer ID Application: …' bash scripts/build-ap
 Ohne Developer-ID-Zertifikat ist der Build nicht notarisiert. Nach einem Neubau kann macOS
 eine erneute Berechtigungsfreigabe verlangen. Die App läuft außerhalb der App Sandbox.
 
+### Freigabe an, aber Schutz startet nicht
+
+Ein lokaler Neubau kann eine andere Ad-hoc-Signatur erhalten. macOS zeigt den alten
+Bedienungshilfen-Schalter dann weiterhin als eingeschaltet an, erlaubt der neuen App aber
+keinen Zugriff. Beim Aktivieren zeigt PalmGuard dazu einen Fehlerdialog mit dem tatsächlichen
+Installationspfad. Über „App im Finder zeigen“ findest du genau diese App.
+
+Nach dem letzten Neubau PalmGuard beenden, den alten PalmGuard-Eintrag in Bedienungshilfen
+mit **−** entfernen und die aktuelle App mit **+** erneut hinzufügen. Danach die App neu starten
+und den Schutz aktivieren. Andere Apps und Berechtigungen müssen nicht zurückgesetzt werden.
+
 ## Einrichten
 
 1. App öffnen, Trackpad vollständig loslassen und die Live-Kontakte prüfen.

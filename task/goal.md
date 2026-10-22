@@ -23,3 +23,11 @@
 Native mouse events do not expose reliable tap provenance. Prefer replacing native tap-to-click
 with deliberate synthetic taps, rather than guessing which mouse events to suppress. Clarify
 pressure-click behavior with the user before adding suppression.
+
+## Activation recovery
+
+- Every failed activation shows an actionable error dialog, including repeated attempts.
+- Missing Accessibility trust explains stale local-build grants and shows the actual bundle path.
+- Only PalmGuard's own stale permission entry may be replaced; user approval precedes a new grant.
+- Rebuild and install before repairing the grant so the permission matches the final binary.
+- Verify the installed app reaches active state; preserve the configured area.

@@ -35,6 +35,10 @@ private struct MenuContent: View {
         Text(model.status)
         Button(model.isEnabled ? "Schutz pausieren" : "Schutz aktivieren") {
             model.toggleProtection()
+            if model.activationProblem != nil {
+                openWindow(id: "settings")
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         Divider()
         Button("Fläche & Einstellungen …") {
