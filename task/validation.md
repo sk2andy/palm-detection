@@ -45,12 +45,15 @@ another explicit permission repair. Source commits and CI builds do not modify t
 | Selected-driver native tap setting | Live getter replaces stale defaults reads |
 | C warnings / Swift formatting / release signing | Passed |
 | macOS native tap-to-click | Switched off with explicit user approval; app confirmed live driver state |
-| Native three-finger dragging | Enabled in macOS before update; hardware check remains human-operated |
-| Updated Accessibility permission | Awaiting user's macOS authentication dialog |
+| Native three-finger dragging | Driver still reports enabled after native tap-to-click was turned off |
+| Updated Accessibility permission | Granted after user's macOS authentication; installed app activated successfully |
+| Installed status | “Tap-Schutz aktiv · Druck-Klicks und Drags frei”; calibrated area preserved |
+| GitHub checks | Tests, formatting and signed app build passed |
+| Physical gesture acceptance | Requested from user; actual pressure/three-finger motion remains human-operated |
 
 The native-click suppression mode, private sender-identity SPI and suppression sequence state
 have been removed. Physical clicks and drags are always delivered by macOS; PalmGuard adds
-only approved tap events. No new installed build should follow the pending permission grant.
+only approved tap events. No new installed build should follow this permission grant.
 
 Two agent reviews checked input-device ownership, callback lifetime, delayed event delivery,
 geometry, gesture state, and code structure. Findings addressed before initial publication.
