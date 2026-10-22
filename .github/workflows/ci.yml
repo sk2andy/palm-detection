@@ -1,0 +1,21 @@
+name: macOS checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test recognition and click evidence
+        run: swift test
+      - name: Swift style
+        run: xcrun swift-format lint --strict --recursive Sources/PalmGuard Sources/PalmGuardCore Tests Package.swift
+      - name: Build signed app bundle
+        run: bash scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PalmGuard-macOS
+          path: dist/PalmGuard.app

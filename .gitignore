@@ -1,0 +1,24 @@
+# Swift / Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcresult
+*.dSYM/
+
+# Local app bundles and build products
+build/
+dist/
+*.app/
+*.dmg
+*.zip
+
+# Machine-local files and secrets
+.DS_Store
+.env
+.env.*
+!.env.example
+*.p12
+*.mobileprovision
+.local/
